@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 )
 
 func main() {
 	if os.Args[1] == "server" {
-		startServer()
+		// startServer()
+		broker := Broker{}
+		err := broker.startBrokerServer()
+		if err != nil {
+			return
+		}
 	} else {
 		clientConnect()
 	}
@@ -54,10 +60,18 @@ func clientConnect() {
 	fmt.Printf("sending to server %s", line)
 	// send to server
 	// a simple protocol: a message has to attach a byte for message length before the actual message
+	// streamWriter.WriteByte(byte(len(line)))
+	// streamWriter.WriteString(line)
+	// streamWriter.Flush()
+
 	streamWriter := bufio.NewWriter(conn)
-	streamWriter.WriteByte(byte(len(line)))
-	streamWriter.WriteString(line)
-	streamWriter.Flush()
+	if strings.HasPrefix(line, "ECHO") {
+		streamWriter.WriteByte(byte(len(line[5:]) + 1))
+		streamWriter.WriteByte(1)
+		streamWriter.WriteString(line[5:])
+		// fmt.Printf("actual data %s", line[4:])
+		streamWriter.Flush()
+	}
 
 	// var str []byte
 	// str = append(str, byte(len(line)))
@@ -69,6 +83,6 @@ func clientConnect() {
 	length, _ := streamReader.ReadByte()
 	data, _ := streamReader.Peek(int(length))
 
-	fmt.Printf("received from server %s", string(data))
+	fmt.Printf("received from server: %s\n", string(data))
 	conn.Close()
 }

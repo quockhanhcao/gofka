@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"strconv"
 )
 
 const BROKER_PORT = 10000
@@ -15,39 +16,40 @@ type Broker struct {
 func (b *Broker) startBrokerServer() error {
 	ln, err := net.Listen(PROTOCOL, fmt.Sprintf(":%d", BROKER_PORT))
 	if err != nil {
-		// fmt.Printf("error creating server %v", err)
 		return err
 	}
 	for {
 		var err error
 		conn, err := ln.Accept()
 		if err != nil {
-			// fmt.Printf("error accepting connection %v", err)
 			return err
 		}
-		fmt.Println("Accepting connection")
-		streamReadWrite := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-		parseMsg, err := readMessageFromStream(streamReadWrite)
+		stream_rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+		parsedMsg, err := readMessageFromStream(stream_rw)
 		if err != nil {
+			fmt.Println("Error here after reading msg")
 			return err
 		}
 
-		if parseMsg != nil {
-			resp, err := b.processBrokerMessage(parseMsg)
+		if err == nil && parsedMsg != nil {
+			resp, err := b.processBrokerMessage(parsedMsg)
 			if err != nil {
+				fmt.Println("Error here after process msg")
 				return err
 			}
-			err = writeMessageToStream(streamReadWrite, *resp)
+			err = writeMessageToStream(stream_rw, *resp)
 			if err != nil {
+				fmt.Println("Error here after write msg")
 				return err
 			}
 		}
 
 		// close connection
-		err = conn.Close()
-		if err != nil {
-			return err
-		}
+		// err = conn.Close()
+		// if err != nil {
+		// 	fmt.Println("Error here after closing connection")
+		// 	return err
+		// }
 	}
 }
 
@@ -62,9 +64,50 @@ func (b *Broker) processBrokerMessage(msg *Message) (*Message, error) {
 		return &Message{R_ECHO: &resp}, nil
 	}
 
+	if msg.P_REG != nil {
+		resp, err := b.processProducerRegMsg(msg.P_REG)
+		if err != nil {
+			return nil, err
+		}
+		return &Message{R_P_REG: resp}, nil
+	}
+
 	return nil, nil
 }
 
 func (b *Broker) processEchoMessage(msg *string) (string, error) {
 	return fmt.Sprintf("I have received: %s", *msg), nil
+}
+
+func (b *Broker) processProducerRegMsg(msg *string) (*byte, error) {
+	port, err := strconv.ParseInt(*msg, 10, 32)
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		conn, err := net.Dial(PROTOCOL, fmt.Sprintf(":%d", port))
+		if err != nil {
+			return
+		}
+		stream_rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+		for {
+			msg, err := readMessageFromStream(stream_rw)
+			if msg == nil && err != nil {
+				// panic(err)
+				fmt.Println("error read msg from stream")
+				break
+			}
+			// process msg
+			resp, err := b.processBrokerMessage(msg)
+			err = writeMessageToStream(stream_rw, *resp)
+			if err != nil {
+				// panic(err)
+				fmt.Println("error write msg to stream")
+				break
+			}
+		}
+	}()
+
+	var resp byte = 0
+	return &resp, nil
 }

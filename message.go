@@ -39,8 +39,6 @@ func readFromStream(streamReadWrite *bufio.ReadWriter) ([]byte, error) {
 		return nil, err
 	}
 
-	fmt.Printf("read from stream %s\n", string(data))
-
 	return data, nil
 }
 

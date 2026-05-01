@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 )
 
 const BROKER_PORT = 10000
@@ -22,25 +23,29 @@ func (b *Broker) startBrokerServer() error {
 		var err error
 		conn, err := ln.Accept()
 		if err != nil {
-			return err
+			// return err
+			break
 		}
 		stream_rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
 		parsedMsg, err := readMessageFromStream(stream_rw)
 		if err != nil {
 			fmt.Println("Error here after reading msg")
-			return err
+			// return err
+			break
 		}
 
 		if err == nil && parsedMsg != nil {
 			resp, err := b.processBrokerMessage(parsedMsg)
 			if err != nil {
 				fmt.Println("Error here after process msg")
-				return err
+				// return err
+				break
 			}
 			err = writeMessageToStream(stream_rw, *resp)
 			if err != nil {
 				fmt.Println("Error here after write msg")
-				return err
+				// return err
+				break
 			}
 		}
 
@@ -48,9 +53,12 @@ func (b *Broker) startBrokerServer() error {
 		// err = conn.Close()
 		// if err != nil {
 		// 	fmt.Println("Error here after closing connection")
-		// 	return err
+		// 	// return err
+		// 	break
 		// }
+		// fmt.Println("Already close connection")
 	}
+	return nil
 }
 
 // process message, call inner process function
@@ -85,8 +93,17 @@ func (b *Broker) processProducerRegMsg(msg *string) (*byte, error) {
 		return nil, err
 	}
 	go func() {
-		conn, err := net.Dial(PROTOCOL, fmt.Sprintf(":%d", port))
+		var conn net.Conn
+		var err error
+		for i := 0; i < 10; i++ {
+			conn, err = net.Dial(PROTOCOL, fmt.Sprintf(":%d", port))
+			if err == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		if err != nil {
+			fmt.Println("failed to connect to producer:", err)
 			return
 		}
 		stream_rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))

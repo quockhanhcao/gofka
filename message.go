@@ -8,18 +8,47 @@ import (
 const (
 	ECHO  = 1 // echo
 	P_REG = 2 // producer register
+	PCM   = 3 // producer to consumer msg
 	// other message type
 	// response (simply add 100 to the initial code)
 	R_ECHO  = 101 // echo response
 	R_P_REG = 102 // producer register response
+	R_PCM   = 103
 )
 
 type Message struct {
 	ECHO  *string
-	P_REG *string
+	P_REG *ProducerRegisterMessage
+	PCM   []byte
 	// response
 	R_ECHO  *string
 	R_P_REG *byte
+	R_PCM   *byte
+}
+
+type ProducerRegisterMessage struct {
+	port    uint16
+	topicID uint16
+}
+
+func (m *ProducerRegisterMessage) fromByte(data []byte) {
+	// first 2 bytes: port
+	// next 2 bytes: topicID
+	m.port = uint16(data[0])<<8 + uint16(data[1])
+	m.topicID = uint16(data[2])<<8 + uint16(data[3])
+}
+
+func (m *ProducerRegisterMessage) toByte() []byte {
+	var data [4]byte
+	// first 2 bytes: port
+	// next 2 bytes: topicID
+	data[0] = byte(m.port >> 8)
+	data[1] = byte(m.port % 255)
+
+	data[2] = byte(m.topicID >> 8)
+	data[3] = byte(m.topicID % 255)
+
+	return data[:4]
 }
 
 // message format
@@ -60,11 +89,19 @@ func parseMessage(data []byte) *Message {
 		st := string(data[1:])
 		return &Message{R_ECHO: &st}
 	case P_REG:
-		st := string(data[1:])
-		return &Message{P_REG: &st}
+		st := data[1:]
+		parsedMsg := ProducerRegisterMessage{}
+		parsedMsg.fromByte(st)
+		return &Message{P_REG: &parsedMsg}
 	case R_P_REG:
 		st := data[1]
 		return &Message{R_P_REG: &st}
+	case PCM:
+		st := data[1:]
+		return &Message{PCM: st}
+	case R_PCM:
+		st := data[1]
+		return &Message{R_PCM: &st}
 	default:
 		return nil
 	}
@@ -104,12 +141,21 @@ func writeMessageToStream(streamReadWrite *bufio.ReadWriter, msg Message) error 
 			return err
 		}
 	} else if msg.P_REG != nil {
-		if err := writeDataToStreamWithType(streamReadWrite, *msg.P_REG, P_REG); err != nil {
+		data := string(msg.P_REG.toByte())
+		if err := writeDataToStreamWithType(streamReadWrite, data, P_REG); err != nil {
 			return err
 		}
 	} else if msg.R_P_REG != nil {
 		data := fmt.Sprintf("%d", *msg.R_P_REG)
 		if err := writeDataToStreamWithType(streamReadWrite, data, R_P_REG); err != nil {
+			return err
+		}
+	} else if msg.PCM != nil {
+		if err := writeDataToStreamWithType(streamReadWrite, string(msg.PCM), PCM); err != nil {
+			return err
+		}
+	} else if msg.R_PCM != nil {
+		if err := writeDataToStreamWithType(streamReadWrite, string(*msg.R_PCM), R_PCM); err != nil {
 			return err
 		}
 	}

@@ -17,12 +17,16 @@ func main() {
 			fmt.Printf("error starting broker: %v\n", err.Error())
 		}
 	case "producer":
-		port, err := strconv.ParseInt(os.Args[2], 10, 32)
+		port, err := strconv.ParseInt(os.Args[2], 10, 16)
+		topicID, err := strconv.ParseInt(os.Args[2], 10, 16)
 		if err != nil {
 			panic(err)
 		}
-		producer := Producer{}
-		producer.startProducerServer(int16(port))
+		producer := Producer{
+			port:    uint16(port),
+			topicID: uint16(topicID),
+		}
+		producer.startProducerServer()
 
 	default:
 		clientConnectAndEcho(10000)

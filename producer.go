@@ -9,18 +9,22 @@ import (
 )
 
 type Producer struct {
+	port    uint16
+	topicID uint16
 }
 
-func (p *Producer) registerBroker(port int16) error {
+func (p *Producer) registerBroker() error {
 	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", BROKER_PORT))
 	if err != nil {
 		return err
 	}
 	// read input stdin, write to stream
 	stream_rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	portStr := fmt.Sprintf("%d", port)
 	msg := Message{
-		P_REG: &portStr,
+		P_REG: &ProducerRegisterMessage{
+			port:    p.port,
+			topicID: p.topicID,
+		},
 	}
 	err = writeMessageToStream(stream_rw, msg)
 	if err != nil {
@@ -33,16 +37,16 @@ func (p *Producer) registerBroker(port int16) error {
 	return nil
 }
 
-func (p *Producer) startProducerServer(port int16) error {
+func (p *Producer) startProducerServer() error {
 	var err error
 
 	// connect to broker to send register
-	err = p.registerBroker(port)
+	err = p.registerBroker()
 	if err != nil {
 		return err
 	}
 
-	ln, err := net.Listen(PROTOCOL, fmt.Sprintf(":%d", port))
+	ln, err := net.Listen(PROTOCOL, fmt.Sprintf(":%d", p.port))
 	if err != nil {
 		return err
 	}
@@ -62,10 +66,9 @@ func (p *Producer) startProducerServer(port int16) error {
 			}
 		}
 
-		fmt.Printf("/////////////// Sending msg to broker: %s\n", line)
 		// write ECHO to stream
 		err = writeMessageToStream(stream_rw, Message{
-			ECHO: &line,
+			PCM: []byte(line),
 		})
 		if err != nil {
 			break
@@ -76,7 +79,7 @@ func (p *Producer) startProducerServer(port int16) error {
 		if err != nil {
 			break
 		}
-		fmt.Printf("Received msg from broker: %s\n", *resp.R_ECHO)
+		fmt.Printf("Received msg from broker: %v\n", *resp.R_PCM)
 	}
 
 	// close connection

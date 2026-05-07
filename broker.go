@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"net"
-	"strconv"
 	"time"
 )
 
@@ -12,6 +11,11 @@ const BROKER_PORT = 10000
 const PROTOCOL = "tcp"
 
 type Broker struct {
+	topics []Topic
+}
+
+func (b *Broker) init() {
+	b.topics = make([]Topic, 0)
 }
 
 func (b *Broker) startBrokerServer() error {
@@ -34,7 +38,7 @@ func (b *Broker) startBrokerServer() error {
 			break
 		}
 
-		if err == nil && parsedMsg != nil {
+		if parsedMsg != nil {
 			resp, err := b.processBrokerMessage(parsedMsg)
 			if err != nil {
 				fmt.Println("Error here after process msg")
@@ -83,20 +87,35 @@ func (b *Broker) processBrokerMessage(msg *Message) (*Message, error) {
 	return nil, nil
 }
 
+func (b *Broker) processProducerMsg(msg []byte, topicIdx int) (byte, error) {
+	b.topics[topicIdx].mq.push(msg)
+	b.topics[topicIdx].mq.debug()
+	return 0, nil
+}
+
 func (b *Broker) processEchoMessage(msg *string) (string, error) {
 	return fmt.Sprintf("I have received: %s", *msg), nil
 }
 
-func (b *Broker) processProducerRegMsg(msg *string) (*byte, error) {
-	port, err := strconv.ParseInt(*msg, 10, 32)
-	if err != nil {
-		return nil, err
+func (b *Broker) processProducerRegMsg(msg *ProducerRegisterMessage) (*byte, error) {
+	fmt.Printf("port = %v\n", msg.port)
+	var topicIdx = -1
+	for idx, tp := range b.topics {
+		if tp.topicID == msg.topicID {
+			topicIdx = idx
+			break
+		}
+	}
+	if topicIdx == -1 {
+		tp := Topic{}
+		tp.init(msg.topicID)
+		b.topics = append(b.topics, tp)
 	}
 	go func() {
 		var conn net.Conn
 		var err error
 		for i := 0; i < 10; i++ {
-			conn, err = net.Dial(PROTOCOL, fmt.Sprintf(":%d", port))
+			conn, err = net.Dial(PROTOCOL, fmt.Sprintf(":%d", msg.port))
 			if err == nil {
 				break
 			}
@@ -115,13 +134,23 @@ func (b *Broker) processProducerRegMsg(msg *string) (*byte, error) {
 				break
 			}
 			// process msg
-			resp, err := b.processBrokerMessage(msg)
-			err = writeMessageToStream(stream_rw, *resp)
-			if err != nil {
-				// panic(err)
-				fmt.Println("error write msg to stream")
-				break
+			// resp, err := b.processBrokerMessage(msg)
+			if msg.PCM != nil {
+				resp, err := b.processProducerMsg(msg.PCM, topicIdx)
+				if err != nil {
+					panic(err)
+				}
+				// return &Message{R_PCM: &resp}, nil
+				err = writeMessageToStream(stream_rw, Message{
+					R_PCM: &resp,
+				})
+				if err != nil {
+					// panic(err)
+					fmt.Println("error write msg to stream")
+					break
+				}
 			}
+
 		}
 	}()
 
